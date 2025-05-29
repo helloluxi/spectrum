@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spectrum</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root {
+            --bg-gradient-start: #0f0f23;
+            --bg-gradient-end: #1a1a2e;
+            --canvas-bg-start: #000814;
+            --canvas-bg-end: #001d3d;
+            --primary-color: #00b4d8;
+            --primary-glow: rgba(0, 255, 255, 0.3);
+            --text-color: #fff;
+            --in-tune-color: #00f5ff;
+            --out-of-tune-color: #ffa7a7;
+            --control-bg: rgba(255, 255, 255, 0.1);
+            --control-border: rgba(255, 255, 255, 0.2);
+            --control-hover-bg: rgba(255, 255, 255, 0.15);
+            --control-hover-border: rgba(0, 180, 216, 0.5);
+            --status-bg: rgba(0, 0, 0, 0.7);
+            --status-border: rgba(255, 255, 255, 0.1);
+            --note-label-color: rgba(255, 255, 255, 0.6);
+            --note-label-glow: rgba(255, 255, 255, 0.3);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, var(--bg-gradient-start), var(--bg-gradient-end));
+            color: var(--text-color);
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+        }
+        .visualizer-container {
+            position: relative;
+            width: min(95vw, 95vh);
+            height: min(95vw, 95vh);
+            margin: 20px;
+        }
+        canvas {
+            background: radial-gradient(circle, var(--canvas-bg-start), var(--canvas-bg-end));
+            border-radius: 50%;
+            box-shadow: 0 0 40px var(--primary-glow), 
+                        inset 0 0 20px rgba(0, 0, 0, 0.5);
+            width: 100%;
+            height: 100%;
+        }
+        .controls {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            z-index: 2;
+        }
+        .toggle-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 32px;
+            color: var(--primary-color);
+            padding: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+        }
+        .toggle-btn:hover {
+            transform: scale(1.1);
+            color: var(--in-tune-color);
+        }
+        .toggle-btn:active {
+            transform: scale(0.95);
+        }
+        .status {
+            background: var(--status-bg);
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--status-border);
+        }
+        .frequency-info {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            transform: none;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px 25px;
+            border-radius: 25px;
+            font-size: 12px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--status-border);
+            z-index: 1;
+            margin-top: 0;
+        }
+        .note-labels {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+        }
+        .note-label {
+            position: absolute;
+            color: var(--note-label-color);
+            font-size: 14px;
+            font-weight: bold;
+            transform: translate(-50%, -50%);
+            text-shadow: 0 0 10px var(--note-label-glow);
+            left: 50%;
+            top: 50%;
+            cursor: pointer;
+            pointer-events: auto;
+            transition: color 0.3s ease, text-shadow 0.3s ease;
+        }
+        .note-label.highlighted {
+            color: var(--primary-color);
+            text-shadow: 0 0 15px var(--primary-glow);
+        }
+        .peak-frequency {
+            color: var(--in-tune-color);
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            pointer-events: auto;
+        }
+        #noteIndicator {
+            font-weight: bold;
+        }
+        #noteIndicator.in-tune {
+            color: var(--in-tune-color);
+        }
+        #noteIndicator.out-of-tune {
+            color: var(--out-of-tune-color);
+        }
+        .settings-panel {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: var(--status-bg);
+            padding: 15px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--status-border);
+            z-index: 2;
+            min-width: 200px;
+            display: none;
+        }
+        .settings-panel h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: var(--primary-color);
+        }
+        .settings-group {
+            margin-bottom: 10px;
+            position: relative;
+        }
+        .settings-group label {
+            display: inline-block;
+            font-size: 12px;
+            margin-bottom: 5px;
+            color: var(--text-color);
+        }
+        .settings-group .value {
+            font-size: 12px;
+            color: var(--primary-color);
+            float: right;
+        }
+        .settings-group .label-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .settings-group input[type="range"] {
+            width: 100%;
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="visualizer-container">
+        <canvas id="canvas"></canvas>
+        <div class="controls">
+            <button class="toggle-btn" id="toggleBtn" title="Start/Stop Audio Visualization"><i class="fas fa-play"></i></button>
+            <div class="status" id="status">
+                <div><span class="peak-frequency" id="peakFreq">- Hz</span> <span id="noteIndicator"></span></div>
+            </div>
+        </div>
+        <div class="note-labels" id="noteLabels"></div>
+        <div class="settings-panel">
+            <h3>Settings</h3>
+            <div class="settings-group">
+                <div class="label-row">
+                    <label for="maxDB">Maximum dB</label>
+                    <div class="value" id="maxDBValue">-30 dB</div>
+                </div>
+                <input type="range" id="maxDB" min="-60" max="0" value="-30" step="1">
+            </div>
+            <div class="settings-group">
+                <div class="label-row">
+                    <label for="dynamicRange">Dynamic Range</label>
+                    <div class="value" id="dynamicRangeValue">40 dB</div>
+                </div>
+                <input type="range" id="dynamicRange" min="10" max="70" value="40" step="1">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const toggleBtn = document.getElementById('toggleBtn');
+        const status = document.getElementById('status');
+        const noteLabels = document.getElementById('noteLabels');
+        const peakFreqDisplay = document.getElementById('peakFreq');
+        const noteIndicator = document.getElementById('noteIndicator');
+        const settingsPanel = document.querySelector('.settings-panel');
+        // Note names for reference (not used for positioning anymore)
+        const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+        let isRunning = false;
+        let audioContext = null;
+        let analyser = null;
+        let microphone = null;
+        let animationFrame = null;
+        let stream = null;
+
+        
+        // Audio analysis parameters
+        const FFT_SIZE = 16384;
+        let MAX_DB = parseInt(localStorage.getItem('spc.maxDB') || '-30');
+        let DYNAMIC_RANGE = parseInt(localStorage.getItem('spc.dr') || '40');
+        
+        // Musical notes and their frequencies
+        const A1_FREQ = 55;
+        const A6_FREQ = 1760;
+        const TOTAL_LAPS = 5;
+        
+        let centerX, centerY, innerRadius, outerRadius;
+        // Set canvas size
+        function resizeCanvas() {
+            const size = Math.min(window.innerWidth, window.innerHeight) * 0.9;
+            canvas.width = size;
+            canvas.height = size;
+            
+            // Update center and radius values
+            centerX = size / 2;
+            centerY = size / 2;
+            innerRadius = size * 0.15;  // 15% of canvas width
+            outerRadius = size * 0.45;   // 40% of canvas width
+            
+            // Redraw everything
+            drawBaseCircle();
+            updateNoteLabels();
+        }
+        
+        
+        
+        // Create note labels around the outer circle
+        function createNoteLabels() {
+            noteLabels.innerHTML = '';
+            notes.forEach((note, index) => {
+                const label = document.createElement('div');
+                label.className = 'note-label';
+                label.textContent = note;
+                label.dataset.noteIndex = index;
+                
+                // Add click event listener
+                label.addEventListener('dblclick', () => {
+                    if (!isRunning) return;
+                    const noteIndex = index;
+                    const frequency = A1_FREQ * Math.pow(2, (noteIndex + 27) / 12);
+                    
+                    // Toggle the note
+                    if (label.classList.contains('highlighted')) {
+                        // Stop the note
+                        stopNote(frequency);
+                        label.classList.remove('highlighted');
+                    } else {
+                        // Start the note
+                        playNote(frequency);
+                        label.classList.add('highlighted');
+                    }
+                });
+                
+                noteLabels.appendChild(label);
+            });
+            updateNoteLabels();
+        }
+        
+        // Update note label positions
+        function updateNoteLabels() {
+            const labels = noteLabels.getElementsByClassName('note-label');
+            Array.from(labels).forEach(label => {
+                const index = parseInt(label.dataset.noteIndex);
+                const angle = (index * 30 - 90) * Math.PI / 180; // Start from top (C)
+                const labelRadius = outerRadius * 0.8 + innerRadius;
+                const x = centerX + labelRadius * Math.cos(angle);
+                const y = centerY + labelRadius * Math.sin(angle);
+                
+                label.style.transform = `translate(${x - centerX}px, ${y - centerY}px)`;
+            });
+        }
+        
+        // Map to store active oscillators
+        const activeOscillators = new Map();
+        
+        // Function to play a note
+        function playNote(frequency) {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            
+            // If note is already playing, don't create a new one
+            if (activeOscillators.has(frequency)) {
+                return;
+            }
+            
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+            
+            // Set a constant volume
+            gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.start();
+            
+            // Store the oscillator and gain node
+            activeOscillators.set(frequency, { oscillator, gainNode });
+        }
+        
+        // Function to stop a note
+        function stopNote(frequency) {
+            const note = activeOscillators.get(frequency);
+            if (note) {
+                // Fade out the note
+                note.gainNode.gain.setValueAtTime(note.gainNode.gain.value, audioContext.currentTime);
+                note.gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.1);
+                
+                // Stop the oscillator after the fade out
+                note.oscillator.stop(audioContext.currentTime + 0.1);
+                
+                // Remove from active oscillators
+                activeOscillators.delete(frequency);
+            }
+        }
+        
+        // Stop all notes when stopping the visualization
+        function stopAudio() {
+            // Stop all active notes
+            activeOscillators.forEach((note, frequency) => {
+                stopNote(frequency);
+            });
+            
+            if (animationFrame) {
+                cancelAnimationFrame(animationFrame);
+                animationFrame = null;
+            }
+            
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            
+            analyser = null;
+            microphone = null;
+            
+            // Remove all highlights
+            document.querySelectorAll('.note-label').forEach(l => l.classList.remove('highlighted'));
+            
+            drawBaseCircle();
+        }
+        
+        // Draw base circles for each octave
+        function drawBaseCircle() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw circles
+            for (let lap = 0; lap < 5; lap++) {
+                const radius = innerRadius + (lap * (outerRadius - innerRadius) / 4);
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+                ctx.strokeStyle = `rgba(255, 255, 255, ${0.1 - lap * 0.015})`;
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
+        }
+        
+        // Main visualization loop
+        function startVisualization() {
+            const bufferLength = analyser.frequencyBinCount;
+            const frequencyData = new Float32Array(bufferLength);
+            const timeData = new Float32Array(analyser.fftSize);
+            
+            function draw() {
+                if (!isRunning) return;
+                
+                animationFrame = requestAnimationFrame(draw);
+                
+                // Get frequency and time domain data
+                analyser.getFloatFrequencyData(frequencyData);
+                analyser.getFloatTimeDomainData(timeData);
+                
+                // Clear canvas
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                drawBaseCircle();
+                
+                // Calculate audio metrics
+                let peakFrequency = 0;
+                let peakMagnitude = MAX_DB - DYNAMIC_RANGE;
+                
+                // Find peak frequency in the musical range
+                const nyquist = audioContext.sampleRate / 2;
+                const minIdx = Math.ceil(A1_FREQ / nyquist * bufferLength);
+                const maxIdx = Math.floor(A6_FREQ / nyquist * bufferLength);
+                const pts = [];
+                let minAmp = 1, maxAmp = 0;
+                
+                for (let i = minIdx; i <= maxIdx; i++) {
+                    const frequency = (i * nyquist) / bufferLength;
+
+                    const magnitude = frequencyData[i];
+                    
+                    if (magnitude > peakMagnitude) {
+                        peakMagnitude = magnitude;
+                        peakFrequency = frequency;
+                    }
+
+                    const amp = Math.max(0, Math.min(1, (magnitude - (MAX_DB - DYNAMIC_RANGE)) / DYNAMIC_RANGE));
+                    const noteNum = Math.log2(frequency / A1_FREQ) * 12 + 9;
+                    const angle = (noteNum * 30 - 90) * Math.PI / 180;
+                    const radius = innerRadius + amp * (outerRadius - innerRadius);
+
+                    minAmp = Math.min(minAmp, amp);
+                    maxAmp = Math.max(maxAmp, amp);
+
+                    // draw
+                    pts.push({
+                        x: centerX + radius * Math.cos(angle),
+                        y: centerY + radius * Math.sin(angle),
+                        hue: noteNum * 5,
+                        alpha: Math.pow(Math.max(0, Math.min(1, (Math.max(
+                            frequencyData[i-2], frequencyData[i-1], frequencyData[i], frequencyData[i+1], frequencyData[i+2]
+                        ) - (MAX_DB - DYNAMIC_RANGE)) / DYNAMIC_RANGE)), 0.1)
+                    });
+                }
+
+                if (pts.length > 2) {
+                    // Draw the entire curve with gradient following the path
+                    ctx.beginPath();
+                    ctx.moveTo(pts[0].x, pts[0].y);
+
+                    for (let i = 1; i < pts.length - 1; i++) {
+                        const xc = (pts[i].x + pts[i + 1].x) / 2;
+                        const yc = (pts[i].y + pts[i + 1].y) / 2;
+                        
+                        // Create gradient for this segment
+                        const gradient = ctx.createRadialGradient(
+                            pts[i].x, pts[i].y, 0,
+                            pts[i].x, pts[i].y, 2
+                        );
+                        
+                        // Add color stops for this segment
+                        const color1 = `hsla(${pts[i].hue},   100%, 50%, ${pts[i].alpha})`;
+                        const color2 = `hsla(${pts[i+1].hue}, 100%, 50%, ${pts[i+1].alpha})`;
+                        gradient.addColorStop(0, color1);
+                        gradient.addColorStop(1, color2);
+                        
+                        ctx.strokeStyle = gradient;
+                        ctx.lineWidth = 2;
+                        
+                        ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
+                        ctx.stroke();
+                        
+                        // Start new path for next segment
+                        ctx.beginPath();
+                        ctx.moveTo(xc, yc);
+                    }
+                }
+                
+                // Calculate note and cents for peak frequency
+                let noteDisplay = '-';
+                if (peakFrequency > 0) {
+                    const noteNum = Math.log2(peakFrequency / A1_FREQ) * 12 + 9;
+                    const noteName = notes[Math.round(noteNum) % 12];
+                    noteDisplay = `${peakFrequency.toFixed(1)} Hz`;
+                    
+                    // Calculate tuning
+                    const deviation = noteNum - Math.round(noteNum);
+                    const inTuneThreshold = 0.2;
+                    const isInTune = Math.abs(deviation) < inTuneThreshold;
+                    
+                    // Update note indicator
+                    noteIndicator.textContent = `(${noteName}${deviation > inTuneThreshold ? '+' : deviation < -inTuneThreshold ? '-' : ''})`;
+                    noteIndicator.className = isInTune ? 'in-tune' : 'out-of-tune';
+                } else {
+                    noteIndicator.textContent = '';
+                }
+                peakFreqDisplay.textContent = noteDisplay;
+            }
+            
+            draw();
+        }
+        
+        // Toggle button event
+        toggleBtn.addEventListener('click', async () => {
+            if (!isRunning) {
+                isRunning = true;
+                toggleBtn.innerHTML = '<i class="fas fa-pause"></i>';
+                toggleBtn.title = 'Stop visualization';
+                await initAudio();
+            } else {
+                isRunning = false;
+                toggleBtn.innerHTML = '<i class="fas fa-play"></i>';
+                toggleBtn.title = 'Start visualization';
+                stopAudio();
+                
+                // Reset displays
+                peakFreqDisplay.textContent = '-';
+                noteIndicator.textContent = '';
+            }
+        });
+
+        // Add event listener for space key
+        document.addEventListener('keydown', (event) => {
+            if (event.key === ' ') {
+                toggleBtn.click();
+            }
+        });
+
+        // Add settings panel event listeners
+        const maxDBSlider = document.getElementById('maxDB');
+        const dynamicRangeSlider = document.getElementById('dynamicRange');
+        const maxDBValue = document.getElementById('maxDBValue');
+        const dynamicRangeValue = document.getElementById('dynamicRangeValue');
+
+        // Set initial slider values from local storage
+        maxDBSlider.value = MAX_DB;
+        dynamicRangeSlider.value = DYNAMIC_RANGE;
+        maxDBValue.textContent = `${MAX_DB} dB`;
+        dynamicRangeValue.textContent = `${DYNAMIC_RANGE} dB`;
+
+        maxDBSlider.addEventListener('input', (e) => {
+            console.log(e.target.value);
+            MAX_DB = parseInt(e.target.value);
+            maxDBValue.textContent = `${MAX_DB} dB`;
+            localStorage.setItem('spc.maxDB', MAX_DB);
+            if (analyser) {
+                analyser.maxDecibels = MAX_DB;
+                analyser.minDecibels = MAX_DB - DYNAMIC_RANGE;
+            }
+        });
+
+        dynamicRangeSlider.addEventListener('input', (e) => {
+            console.log(e.target.value);
+            DYNAMIC_RANGE = parseInt(e.target.value);
+            dynamicRangeValue.textContent = `${DYNAMIC_RANGE} dB`;
+            localStorage.setItem('spc.dr', DYNAMIC_RANGE);
+            if (analyser) {
+                analyser.minDecibels = MAX_DB - DYNAMIC_RANGE;
+            }
+        });
+        
+        // Add double-click event listener for frequency display
+        peakFreqDisplay.addEventListener('dblclick', () => {
+            settingsPanel.style.display = settingsPanel.style.display === 'none' ? 'block' : 'none';
+        });
+
+        // Initialize audio
+        async function initAudio() {
+            try {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = FFT_SIZE;
+                analyser.minDecibels = MAX_DB - DYNAMIC_RANGE;
+                analyser.maxDecibels = MAX_DB;
+                analyser.smoothingTimeConstant = 0.8;
+                
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        echoCancellation: false,
+                        noiseSuppression: true,
+                        autoGainControl: false
+                    } 
+                });
+                
+                microphone = audioContext.createMediaStreamSource(stream);
+                microphone.connect(analyser);
+                
+                startVisualization();
+                
+            } catch (error) {
+                console.error('Error accessing microphone:', error);
+                stopAudio();
+            }
+        }
+
+        // Initial
+        createNoteLabels();
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+    </script>
+</body>
+</html>
