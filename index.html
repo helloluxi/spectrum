@@ -224,6 +224,52 @@
             width: 100%;
             margin: 5px 0;
         }
+        .settings-group select {
+            width: 100%;
+            padding: 5px;
+            margin: 5px 0;
+            background: var(--control-bg);
+            border: 1px solid var(--control-border);
+            border-radius: 5px;
+            color: var(--text-color);
+            font-size: 12px;
+        }
+        .settings-group select:hover {
+            background: var(--control-hover-bg);
+            border-color: var(--control-hover-border);
+        }
+        .tab-container {
+            display: flex;
+            gap: 0;
+            margin: 5px 0;
+        }
+        .tab-button {
+            flex: 1;
+            padding: 8px 12px;
+            background: var(--control-bg);
+            border: 1px solid var(--control-border);
+            color: var(--text-color);
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border-right: none;
+        }
+        .tab-button:first-child {
+            border-radius: 5px 0 0 5px;
+        }
+        .tab-button:last-child {
+            border-radius: 0 5px 5px 0;
+            border-right: 1px solid var(--control-border);
+        }
+        .tab-button:hover {
+            background: var(--control-hover-bg);
+            border-color: var(--control-hover-border);
+        }
+        .tab-button.active {
+            background: var(--primary-color);
+            color: #000;
+            border-color: var(--primary-color);
+        }
         .settings-footer {
             margin-top: 15px;
             font-size: 10px;
@@ -267,6 +313,32 @@
                 </div>
                 <input type="range" id="dynamicRange" min="10" max="70" value="40" step="1">
             </div>
+            <div class="settings-group">
+                <div class="label-row">
+                    <label for="noteVolume">Note Playing Volume</label>
+                    <div class="value" id="noteVolumeValue">0.2</div>
+                </div>
+                <input type="range" id="noteVolume" min="0" max="1" value="0.2" step="0.05">
+            </div>
+            <div class="settings-group">
+                <div class="label-row">
+                    <label for="fftSize">FFT Size</label>
+                    <div class="value" id="fftSizeValue">16384</div>
+                </div>
+                <div class="tab-container">
+                    <button class="tab-button" data-fft-size="4096">4096</button>
+                    <button class="tab-button" data-fft-size="8192">8192</button>
+                    <button class="tab-button active" data-fft-size="16384">16384</button>
+                    <button class="tab-button" data-fft-size="32768">32768</button>
+                </div>
+            </div>
+            <div class="settings-group">
+                <div class="label-row">
+                    <label for="smoothingTimeConstant">Time Smoothing</label>
+                    <div class="value" id="smoothingTimeConstantValue">0</div>
+                </div>
+                <input type="range" id="smoothingTimeConstant" min="0" max="0.99" value="0" step="0.03">
+            </div>
             <div class="settings-footer">
                 <div>&copy; 2025 Xi Lu</div>
                 <div> MIT License | <a href="https://github.com/helloluxi/spectrum" target="_blank">GitHub</a></div>
@@ -299,9 +371,11 @@
 
         
         // Audio analysis parameters
-        const FFT_SIZE = 16384;
+        let FFT_SIZE = parseInt(localStorage.getItem('spc.fftSize') || '16384');
         let MAX_DB = parseInt(localStorage.getItem('spc.maxDB') || '-30');
         let DYNAMIC_RANGE = parseInt(localStorage.getItem('spc.dr') || '40');
+        let SMOOTHING_TIME_CONSTANT = parseFloat(localStorage.getItem('spc.smoothing') || '0');
+        let NOTE_VOLUME = parseFloat(localStorage.getItem('spc.noteVolume') || '0.2');
         
         // Musical notes and their frequencies
         const A1_FREQ = 55;
@@ -395,7 +469,7 @@
             oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
             
             // Set a constant volume
-            gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+            gainNode.gain.setValueAtTime(NOTE_VOLUME, audioContext.currentTime);
             
             oscillator.connect(gainNode);
             gainNode.connect(audioContext.destination);
@@ -614,14 +688,33 @@
         // Add settings panel event listeners
         const maxDBSlider = document.getElementById('maxDB');
         const dynamicRangeSlider = document.getElementById('dynamicRange');
+        const fftSizeTabs = document.querySelectorAll('.tab-button[data-fft-size]');
+        const noteVolumeSlider = document.getElementById('noteVolume');
+        const smoothingTimeConstantSlider = document.getElementById('smoothingTimeConstant');
         const maxDBValue = document.getElementById('maxDBValue');
         const dynamicRangeValue = document.getElementById('dynamicRangeValue');
+        const fftSizeValue = document.getElementById('fftSizeValue');
+        const noteVolumeValue = document.getElementById('noteVolumeValue');
+        const smoothingTimeConstantValue = document.getElementById('smoothingTimeConstantValue');
 
-        // Set initial slider values from local storage
+        // Set initial values from local storage
         maxDBSlider.value = MAX_DB;
         dynamicRangeSlider.value = DYNAMIC_RANGE;
+        noteVolumeSlider.value = NOTE_VOLUME;
+        smoothingTimeConstantSlider.value = SMOOTHING_TIME_CONSTANT;
         maxDBValue.textContent = `${MAX_DB} dB`;
         dynamicRangeValue.textContent = `${DYNAMIC_RANGE} dB`;
+        fftSizeValue.textContent = FFT_SIZE;
+        noteVolumeValue.textContent = NOTE_VOLUME;
+        smoothingTimeConstantValue.textContent = SMOOTHING_TIME_CONSTANT;
+
+        // Set active FFT size tab
+        fftSizeTabs.forEach(tab => {
+            tab.classList.remove('active');
+            if (parseInt(tab.dataset.fftSize) === FFT_SIZE) {
+                tab.classList.add('active');
+            }
+        });
 
         maxDBSlider.addEventListener('input', (e) => {
             MAX_DB = parseInt(e.target.value);
@@ -639,6 +732,46 @@
             localStorage.setItem('spc.dr', DYNAMIC_RANGE);
             if (analyser) {
                 analyser.minDecibels = MAX_DB - DYNAMIC_RANGE;
+            }
+        });
+
+        // FFT size tab buttons event listeners
+        fftSizeTabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                // Remove active from all tabs
+                fftSizeTabs.forEach(t => t.classList.remove('active'));
+                // Add active to clicked tab
+                tab.classList.add('active');
+                
+                FFT_SIZE = parseInt(tab.dataset.fftSize);
+                fftSizeValue.textContent = FFT_SIZE;
+                localStorage.setItem('spc.fftSize', FFT_SIZE);
+                
+                // Note: FFT size change requires restarting the audio context
+                if (isRunning) {
+                    // Restart audio to apply new FFT size
+                    isRunning = false;
+                    stopAudio();
+                    setTimeout(async () => {
+                        isRunning = true;
+                        await initAudio();
+                    }, 100);
+                }
+            });
+        });
+
+        noteVolumeSlider.addEventListener('input', (e) => {
+            NOTE_VOLUME = parseFloat(e.target.value);
+            noteVolumeValue.textContent = NOTE_VOLUME;
+            localStorage.setItem('spc.noteVolume', NOTE_VOLUME);
+        });
+
+        smoothingTimeConstantSlider.addEventListener('input', (e) => {
+            SMOOTHING_TIME_CONSTANT = parseFloat(e.target.value);
+            smoothingTimeConstantValue.textContent = SMOOTHING_TIME_CONSTANT;
+            localStorage.setItem('spc.smoothing', SMOOTHING_TIME_CONSTANT);
+            if (analyser) {
+                analyser.smoothingTimeConstant = SMOOTHING_TIME_CONSTANT;
             }
         });
         
@@ -665,7 +798,7 @@
                 analyser.fftSize = FFT_SIZE;
                 analyser.minDecibels = MAX_DB - DYNAMIC_RANGE;
                 analyser.maxDecibels = MAX_DB;
-                analyser.smoothingTimeConstant = 0.8;
+                analyser.smoothingTimeConstant = SMOOTHING_TIME_CONSTANT;
                 
                 stream = await navigator.mediaDevices.getUserMedia({ 
                     audio: {
