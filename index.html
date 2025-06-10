@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Spectrum</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><path d='M499.1 6.3c8.1 6 12.9 15.6 12.9 25.7l0 72 0 264c0 44.2-43 80-96 80s-96-35.8-96-80s43-80 96-80c11.2 0 22 1.6 32 4.6L448 147 192 223.8 192 432c0 44.2-43 80-96 80s-96-35.8-96-80s43-80 96-80c11.2 0 22 1.6 32 4.6L128 200l0-72c0-14.1 9.3-26.6 22.8-30.7l320-96c9.7-2.9 20.2-1.1 28.3 5z' fill='%2300b4d8'/></svg>">
     <style>
         :root {
             --bg-gradient-start: #0f0f23;
@@ -151,18 +152,47 @@
         #noteIndicator.out-of-tune {
             color: var(--out-of-tune-color);
         }
-        .settings-panel {
+        .settings-button {
             position: fixed;
             top: 20px;
             right: 20px;
             background: var(--status-bg);
-            padding: 15px;
-            border-radius: 10px;
+            color: var(--primary-color);
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border: 1px solid var(--status-border);
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(5px);
+            z-index: 3;
+            transition: all 0.3s ease;
+        }
+        .settings-button:hover {
+            background: var(--control-hover-bg);
+            border-color: var(--control-hover-border);
+            transform: scale(1.05);
+        }
+        .settings-button i {
+            font-size: 18px;
+        }
+        .settings-panel {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--status-bg);
+            padding: 20px;
+            border-radius: 15px;
             backdrop-filter: blur(10px);
             border: 1px solid var(--status-border);
-            z-index: 2;
-            min-width: 200px;
+            z-index: 10;
+            min-width: 250px;
             display: none;
+            box-shadow: 0 0 25px rgba(0, 0, 0, 0.5);
         }
         .settings-panel h3 {
             margin: 0 0 10px 0;
@@ -194,6 +224,21 @@
             width: 100%;
             margin: 5px 0;
         }
+        .settings-footer {
+            margin-top: 15px;
+            font-size: 10px;
+            text-align: center;
+            color: rgba(255, 255, 255, 0.5);
+            border-top: 1px solid var(--status-border);
+            padding-top: 8px;
+        }
+        .settings-footer a {
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+        .settings-footer a:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
@@ -222,7 +267,15 @@
                 </div>
                 <input type="range" id="dynamicRange" min="10" max="70" value="40" step="1">
             </div>
+            <div class="settings-footer">
+                <div>&copy; 2025 Xi Lu</div>
+                <div> MIT License | <a href="https://github.com/helloluxi/spectrum" target="_blank">GitHub</a></div>
+            </div>
         </div>
+    </div>
+    
+    <div class="settings-button" id="settingsBtn" title="Open Settings">
+        <i class="fas fa-cog"></i>
     </div>
 
     <script>
@@ -234,6 +287,7 @@
         const peakFreqDisplay = document.getElementById('peakFreq');
         const noteIndicator = document.getElementById('noteIndicator');
         const settingsPanel = document.querySelector('.settings-panel');
+        const settingsBtn = document.getElementById('settingsBtn');
         // Note names for reference (not used for positioning anymore)
         const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
         let isRunning = false;
@@ -570,7 +624,6 @@
         dynamicRangeValue.textContent = `${DYNAMIC_RANGE} dB`;
 
         maxDBSlider.addEventListener('input', (e) => {
-            console.log(e.target.value);
             MAX_DB = parseInt(e.target.value);
             maxDBValue.textContent = `${MAX_DB} dB`;
             localStorage.setItem('spc.maxDB', MAX_DB);
@@ -581,7 +634,6 @@
         });
 
         dynamicRangeSlider.addEventListener('input', (e) => {
-            console.log(e.target.value);
             DYNAMIC_RANGE = parseInt(e.target.value);
             dynamicRangeValue.textContent = `${DYNAMIC_RANGE} dB`;
             localStorage.setItem('spc.dr', DYNAMIC_RANGE);
@@ -590,9 +642,19 @@
             }
         });
         
-        // Add double-click event listener for frequency display
-        peakFreqDisplay.addEventListener('dblclick', () => {
+        // Settings button click event
+        settingsBtn.addEventListener('click', () => {
             settingsPanel.style.display = settingsPanel.style.display === 'none' ? 'block' : 'none';
+        });
+        
+        // Close settings panel when clicking outside
+        document.addEventListener('click', (event) => {
+            if (!settingsPanel.contains(event.target) && 
+                event.target !== settingsBtn && 
+                !settingsBtn.contains(event.target) && 
+                settingsPanel.style.display === 'block') {
+                settingsPanel.style.display = 'none';
+            }
         });
 
         // Initialize audio
