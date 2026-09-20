@@ -136,15 +136,19 @@
             color: var(--primary-color);
             text-shadow: 0 0 15px var(--primary-glow);
         }
+        .peak-frequency,
+        #noteIndicator {
+            font-size: 24px;
+            font-weight: bold;
+        }
         .peak-frequency {
             color: var(--in-tune-color);
-            font-size: 16px;
-            font-weight: bold;
             cursor: pointer;
             pointer-events: auto;
         }
-        #noteIndicator {
-            font-weight: bold;
+        #frequencyDisplay {
+            margin-top: 4px;
+            font-size: 16px;
         }
         #noteIndicator.in-tune {
             color: var(--in-tune-color);
@@ -293,7 +297,8 @@
         <div class="controls">
             <button class="toggle-btn" id="toggleBtn" title="Start/Stop Audio Visualization"><i class="fas fa-play"></i></button>
             <div class="status" id="status">
-                <div><span class="peak-frequency" id="peakFreq">- Hz</span> <span id="noteIndicator"></span></div>
+                <div><span class="peak-frequency" id="peakFreq">-</span> <span id="noteIndicator"></span></div>
+                <div id="frequencyDisplay">- Hz</div>
             </div>
         </div>
         <div class="note-labels" id="noteLabels"></div>
@@ -350,7 +355,9 @@
         <i class="fas fa-cog"></i>
     </div>
 
-    <script>
+    <script type="module">
+        import { PitchDetector } from 'https://esm.sh/pitchy@4';
+
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
         const toggleBtn = document.getElementById('toggleBtn');
@@ -358,6 +365,7 @@
         const noteLabels = document.getElementById('noteLabels');
         const peakFreqDisplay = document.getElementById('peakFreq');
         const noteIndicator = document.getElementById('noteIndicator');
+        const frequencyDisplay = document.getElementById('frequencyDisplay');
         const settingsPanel = document.querySelector('.settings-panel');
         const settingsBtn = document.getElementById('settingsBtn');
         // Note names for reference (not used for positioning anymore)
@@ -365,11 +373,24 @@
         let isRunning = false;
         let audioContext = null;
         let analyser = null;
+        let pitchAnalyser = null;
+        let pitchDetector = null;
+        let pitchInput = null;
         let microphone = null;
         let animationFrame = null;
         let stream = null;
+        let detectedPitch = 0;
+        let lastPitchAnalysis = 0;
+        let unclearPitchFrames = 0;
+        const recentPitches = [];
 
-        
+        // Pitch detection is intentionally independent of the display FFT. This
+        // keeps detection latency and CPU use stable when the FFT setting changes.
+        const PITCH_BUFFER_SIZE = 4096;
+        const PITCH_UPDATE_INTERVAL_MS = 50;
+        const MIN_PITCH_CLARITY = 0.9;
+        const MAX_UNCLEAR_PITCH_FRAMES = 3;
+
         // Audio analysis parameters
         let FFT_SIZE = parseInt(localStorage.getItem('spc.fftSize') || '16384');
         let MAX_DB = parseInt(localStorage.getItem('spc.maxDB') || '-30');
@@ -519,7 +540,14 @@
             }
             
             analyser = null;
+            pitchAnalyser = null;
+            pitchDetector = null;
+            pitchInput = null;
             microphone = null;
+            detectedPitch = 0;
+            lastPitchAnalysis = 0;
+            unclearPitchFrames = 0;
+            recentPitches.length = 0;
             
             // Remove all highlights
             document.querySelectorAll('.note-label').forEach(l => l.classList.remove('highlighted'));
@@ -543,30 +571,53 @@
             }
         }
         
+        function updateDetectedPitch(now) {
+            if (now - lastPitchAnalysis < PITCH_UPDATE_INTERVAL_MS) return;
+            lastPitchAnalysis = now;
+
+            pitchAnalyser.getFloatTimeDomainData(pitchInput);
+            const [pitch, clarity] = pitchDetector.findPitch(pitchInput, audioContext.sampleRate);
+            const isClearPitch = clarity >= MIN_PITCH_CLARITY && pitch >= A1_FREQ && pitch <= A6_FREQ;
+
+            if (!isClearPitch) {
+                unclearPitchFrames += 1;
+                if (unclearPitchFrames >= MAX_UNCLEAR_PITCH_FRAMES) {
+                    detectedPitch = 0;
+                    recentPitches.length = 0;
+                }
+                return;
+            }
+
+            unclearPitchFrames = 0;
+            const previousPitch = recentPitches.at(-1);
+            if (previousPitch && Math.abs(12 * Math.log2(pitch / previousPitch)) > 1) {
+                recentPitches.length = 0;
+            }
+            recentPitches.push(pitch);
+            if (recentPitches.length > 3) recentPitches.shift();
+
+            const sortedPitches = [...recentPitches].sort((a, b) => a - b);
+            detectedPitch = sortedPitches[Math.floor(sortedPitches.length / 2)];
+        }
+
         // Main visualization loop
         function startVisualization() {
             const bufferLength = analyser.frequencyBinCount;
             const frequencyData = new Float32Array(bufferLength);
-            const timeData = new Float32Array(analyser.fftSize);
             
-            function draw() {
+            function draw(now = performance.now()) {
                 if (!isRunning) return;
                 
                 animationFrame = requestAnimationFrame(draw);
                 
-                // Get frequency and time domain data
                 analyser.getFloatFrequencyData(frequencyData);
-                analyser.getFloatTimeDomainData(timeData);
+                updateDetectedPitch(now);
                 
                 // Clear canvas
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
                 drawBaseCircle();
                 
-                // Calculate audio metrics
-                let peakFrequency = 0;
-                let peakMagnitude = MAX_DB - DYNAMIC_RANGE;
-                
-                // Find peak frequency in the musical range
+                // Build the spectrum curve in the musical range
                 const nyquist = audioContext.sampleRate / 2;
                 const minIdx = Math.ceil(A1_FREQ / nyquist * bufferLength);
                 const maxIdx = Math.floor(A6_FREQ / nyquist * bufferLength);
@@ -577,12 +628,6 @@
                     const frequency = (i * nyquist) / bufferLength;
 
                     const magnitude = frequencyData[i];
-                    
-                    if (magnitude > peakMagnitude) {
-                        peakMagnitude = magnitude;
-                        peakFrequency = frequency;
-                    }
-
                     const amp = Math.max(0, Math.min(1, (magnitude - (MAX_DB - DYNAMIC_RANGE)) / DYNAMIC_RANGE));
                     const noteNum = Math.log2(frequency / A1_FREQ) * 12 + 9;
                     const angle = (noteNum * 30 - 90) * Math.PI / 180;
@@ -635,25 +680,25 @@
                     }
                 }
                 
-                // Calculate note and cents for peak frequency
+                // Display the nearest note and exact offset instead of raw Hz.
                 let noteDisplay = '-';
-                if (peakFrequency > 0) {
-                    const noteNum = Math.log2(peakFrequency / A1_FREQ) * 12 + 9;
+                let frequencyText = '- Hz';
+                if (detectedPitch > 0) {
+                    const noteNum = Math.log2(detectedPitch / A1_FREQ) * 12 + 9;
                     const noteName = notes[Math.round(noteNum) % 12];
-                    noteDisplay = `${peakFrequency.toFixed(1)} Hz`;
-                    
-                    // Calculate tuning
-                    const deviation = noteNum - Math.round(noteNum);
-                    const inTuneThreshold = 0.2;
-                    const isInTune = Math.abs(deviation) < inTuneThreshold;
-                    
-                    // Update note indicator
-                    noteIndicator.textContent = `(${noteName}${deviation > inTuneThreshold ? '+' : deviation < -inTuneThreshold ? '-' : ''})`;
+                    const cents = Math.round((noteNum - Math.round(noteNum)) * 100);
+                    const inTuneThreshold = 20;
+                    const isInTune = Math.abs(cents) < inTuneThreshold;
+
+                    noteDisplay = noteName;
+                    frequencyText = `${detectedPitch.toFixed(1)} Hz`;
+                    noteIndicator.textContent = `${cents >= 0 ? '+' : ''}${cents}¢`;
                     noteIndicator.className = isInTune ? 'in-tune' : 'out-of-tune';
                 } else {
                     noteIndicator.textContent = '';
                 }
                 peakFreqDisplay.textContent = noteDisplay;
+                frequencyDisplay.textContent = frequencyText;
             }
             
             draw();
@@ -675,6 +720,7 @@
                 // Reset displays
                 peakFreqDisplay.textContent = '-';
                 noteIndicator.textContent = '';
+                frequencyDisplay.textContent = '- Hz';
             }
         });
 
@@ -799,22 +845,32 @@
                 analyser.minDecibels = MAX_DB - DYNAMIC_RANGE;
                 analyser.maxDecibels = MAX_DB;
                 analyser.smoothingTimeConstant = SMOOTHING_TIME_CONSTANT;
+
+                pitchAnalyser = audioContext.createAnalyser();
+                pitchAnalyser.fftSize = PITCH_BUFFER_SIZE;
+                pitchDetector = PitchDetector.forFloat32Array(PITCH_BUFFER_SIZE);
+                pitchDetector.minVolumeDecibels = -35;
+                pitchInput = new Float32Array(PITCH_BUFFER_SIZE);
                 
                 stream = await navigator.mediaDevices.getUserMedia({ 
                     audio: {
                         echoCancellation: false,
-                        noiseSuppression: true,
+                        noiseSuppression: false,
                         autoGainControl: false
                     } 
                 });
                 
                 microphone = audioContext.createMediaStreamSource(stream);
                 microphone.connect(analyser);
+                microphone.connect(pitchAnalyser);
                 
                 startVisualization();
                 
             } catch (error) {
                 console.error('Error accessing microphone:', error);
+                isRunning = false;
+                toggleBtn.innerHTML = '<i class="fas fa-play"></i>';
+                toggleBtn.title = 'Start visualization';
                 stopAudio();
             }
         }
